@@ -9,7 +9,7 @@ const isWindows = process.platform === "win32";
  * Resolve a command to its full executable path (needed for Windows)
  */
 function resolveCommand(command: string): string {
-	if (!isWindows || isBun) return command;
+	if (!isWindows) return command;
 	try {
 		const result = spawnSync("where", [command], { encoding: "utf8", stdio: "pipe" });
 		if (result.status !== 0) return command;
@@ -52,8 +52,11 @@ export async function execCommand(
 	workDir: string,
 	env?: Record<string, string>,
 ): Promise<{ stdout: string; stderr: string; exitCode: number }> {
+	// Resolve command path for Windows (needed for both Bun and Node.js)
+	const resolvedCommand = resolveCommand(command);
+	
 	if (isBun) {
-		const proc = Bun.spawn([command, ...args], {
+		const proc = Bun.spawn([resolvedCommand, ...args], {
 			cwd: workDir,
 			stdout: "pipe",
 			stderr: "pipe",
@@ -70,7 +73,6 @@ export async function execCommand(
 	}
 
 	// Node.js fallback - resolve full path on Windows to avoid shell
-	const resolvedCommand = resolveCommand(command);
 	return new Promise((resolve) => {
 		const proc = spawn(resolvedCommand, args, {
 			cwd: workDir,
@@ -185,8 +187,11 @@ export async function execCommandStreaming(
 	onLine: (line: string) => void,
 	env?: Record<string, string>,
 ): Promise<{ exitCode: number }> {
+	// Resolve command path for Windows (needed for both Bun and Node.js)
+	const resolvedCommand = resolveCommand(command);
+	
 	if (isBun) {
-		const proc = Bun.spawn([command, ...args], {
+		const proc = Bun.spawn([resolvedCommand, ...args], {
 			cwd: workDir,
 			stdout: "pipe",
 			stderr: "pipe",
@@ -201,7 +206,6 @@ export async function execCommandStreaming(
 	}
 
 	// Node.js fallback - resolve full path on Windows to avoid shell
-	const resolvedCommand = resolveCommand(command);
 	return new Promise((resolve) => {
 		const proc = spawn(resolvedCommand, args, {
 			cwd: workDir,
