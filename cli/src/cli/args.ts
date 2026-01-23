@@ -12,9 +12,11 @@ const packageJsonPath = join(__dirname, "../../package.json");
 let VERSION = "0.0.0"; // Fallback version
 try {
 	const packageJson = JSON.parse(readFileSync(packageJsonPath, "utf-8"));
-	VERSION = packageJson.version;
+	if (packageJson.version && typeof packageJson.version === "string") {
+		VERSION = packageJson.version;
+	}
 } catch (error) {
-	console.error("Warning: Could not read version from package.json");
+	// Silently fall back to default version
 }
 
 /**
