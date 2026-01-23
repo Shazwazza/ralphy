@@ -1,5 +1,4 @@
-import { existsSync, statSync } from "node:fs";
-import { readFileSync } from "node:fs";
+import { existsSync, readFileSync, statSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { Command } from "commander";
@@ -9,8 +8,14 @@ import type { RuntimeOptions } from "../config/types.ts";
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
 const packageJsonPath = join(__dirname, "../../package.json");
-const packageJson = JSON.parse(readFileSync(packageJsonPath, "utf-8"));
-const VERSION = packageJson.version;
+
+let VERSION = "0.0.0"; // Fallback version
+try {
+	const packageJson = JSON.parse(readFileSync(packageJsonPath, "utf-8"));
+	VERSION = packageJson.version;
+} catch (error) {
+	console.error("Warning: Could not read version from package.json");
+}
 
 /**
  * Create the CLI program with all options
