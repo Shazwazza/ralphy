@@ -81,6 +81,9 @@ export async function execCommand(
 			shell: isWindows, // Required on Windows for npm global commands (.cmd wrappers)
 		});
 
+		let stdout = "";
+		let stderr = "";
+
 		// Write stdin content if provided
 		if (stdinContent && proc.stdin) {
 			// Handle EPIPE errors gracefully - process may close stdin before we finish writing
@@ -98,9 +101,6 @@ export async function execCommand(
 			});
 			proc.stdin.end();
 		}
-
-		let stdout = "";
-		let stderr = "";
 
 		proc.stdout?.on("data", (data) => {
 			stdout += data.toString();
