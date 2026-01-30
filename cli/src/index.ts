@@ -1,6 +1,7 @@
 #!/usr/bin/env bun
 import { parseArgs } from "./cli/args.ts";
 import { addRule, showConfig } from "./cli/commands/config.ts";
+import { runHello } from "./cli/commands/hello.ts";
 import { runInit } from "./cli/commands/init.ts";
 import { runLoop } from "./cli/commands/run.ts";
 import { runTask } from "./cli/commands/task.ts";
@@ -13,9 +14,17 @@ async function main(): Promise<void> {
 			options,
 			task,
 			initMode,
+			helloMode,
 			showConfig: showConfigMode,
 			addRule: rule,
+			configPath,
 		} = parseArgs(process.argv);
+
+		// Handle --hello
+		if (helloMode) {
+			await runHello();
+			return;
+		}
 
 		// Handle --init
 		if (initMode) {
@@ -25,13 +34,13 @@ async function main(): Promise<void> {
 
 		// Handle --config
 		if (showConfigMode) {
-			await showConfig();
+			await showConfig(undefined, configPath);
 			return;
 		}
 
 		// Handle --add-rule
 		if (rule) {
-			await addRule(rule);
+			await addRule(rule, undefined, configPath);
 			return;
 		}
 

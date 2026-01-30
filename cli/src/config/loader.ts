@@ -17,7 +17,13 @@ export function getRalphyDir(workDir = process.cwd()): string {
 /**
  * Get the full path to the config file
  */
-export function getConfigPath(workDir = process.cwd()): string {
+export function getConfigPath(workDir = process.cwd(), customPath?: string): string {
+	if (customPath) {
+		// Support both absolute and relative paths
+		return customPath.startsWith("/") || customPath.includes(":")
+			? customPath
+			: join(workDir, customPath);
+	}
 	return join(workDir, RALPHY_DIR, CONFIG_FILE);
 }
 
@@ -31,15 +37,15 @@ export function getProgressPath(workDir = process.cwd()): string {
 /**
  * Check if ralphy is initialized in the directory
  */
-export function isInitialized(workDir = process.cwd()): boolean {
-	return existsSync(getConfigPath(workDir));
+export function isInitialized(workDir = process.cwd(), customPath?: string): boolean {
+	return existsSync(getConfigPath(workDir, customPath));
 }
 
 /**
  * Load the ralphy config from disk
  */
-export function loadConfig(workDir = process.cwd()): RalphyConfig | null {
-	const configPath = getConfigPath(workDir);
+export function loadConfig(workDir = process.cwd(), customPath?: string): RalphyConfig | null {
+	const configPath = getConfigPath(workDir, customPath);
 
 	if (!existsSync(configPath)) {
 		return null;
@@ -59,48 +65,48 @@ export function loadConfig(workDir = process.cwd()): RalphyConfig | null {
 /**
  * Get rules from config
  */
-export function loadRules(workDir = process.cwd()): string[] {
-	const config = loadConfig(workDir);
+export function loadRules(workDir = process.cwd(), customPath?: string): string[] {
+	const config = loadConfig(workDir, customPath);
 	return config?.rules ?? [];
 }
 
 /**
  * Get boundaries from config
  */
-export function loadBoundaries(workDir = process.cwd()): string[] {
-	const config = loadConfig(workDir);
+export function loadBoundaries(workDir = process.cwd(), customPath?: string): string[] {
+	const config = loadConfig(workDir, customPath);
 	return config?.boundaries.never_touch ?? [];
 }
 
 /**
  * Get test command from config
  */
-export function loadTestCommand(workDir = process.cwd()): string {
-	const config = loadConfig(workDir);
+export function loadTestCommand(workDir = process.cwd(), customPath?: string): string {
+	const config = loadConfig(workDir, customPath);
 	return config?.commands.test ?? "";
 }
 
 /**
  * Get lint command from config
  */
-export function loadLintCommand(workDir = process.cwd()): string {
-	const config = loadConfig(workDir);
+export function loadLintCommand(workDir = process.cwd(), customPath?: string): string {
+	const config = loadConfig(workDir, customPath);
 	return config?.commands.lint ?? "";
 }
 
 /**
  * Get build command from config
  */
-export function loadBuildCommand(workDir = process.cwd()): string {
-	const config = loadConfig(workDir);
+export function loadBuildCommand(workDir = process.cwd(), customPath?: string): string {
+	const config = loadConfig(workDir, customPath);
 	return config?.commands.build ?? "";
 }
 
 /**
  * Get project context as a formatted string
  */
-export function loadProjectContext(workDir = process.cwd()): string {
-	const config = loadConfig(workDir);
+export function loadProjectContext(workDir = process.cwd(), customPath?: string): string {
+	const config = loadConfig(workDir, customPath);
 	if (!config) return "";
 
 	const parts: string[] = [];

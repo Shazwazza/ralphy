@@ -1,6 +1,7 @@
 import { existsSync } from "node:fs";
 import { join } from "node:path";
 import { loadBoundaries, loadProjectContext, loadRules } from "../config/loader.ts";
+import type { RalphyConfig } from "../config/types.ts";
 import { getBrowserInstructions, isBrowserAvailable } from "./browser.ts";
 
 interface PromptOptions {
@@ -11,6 +12,9 @@ interface PromptOptions {
 	skipTests?: boolean;
 	skipLint?: boolean;
 	prdFile?: string;
+	configPath?: string;
+	/** Pre-loaded config (avoids re-reading from disk) */
+	config?: RalphyConfig | null;
 }
 
 /**
@@ -41,24 +45,43 @@ export function buildPrompt(options: PromptOptions): string {
 		skipTests = false,
 		skipLint = false,
 		prdFile,
+		configPath,
+		config,
 	} = options;
 
 	const parts: string[] = [];
 
+	// Use pre-loaded config if available, otherwise load from disk
+	// This allows loading once per iteration instead of 3x per iteration
+	const loadedConfig = config !== undefined ? config : null;
+
 	// Add project context if available
-	const context = loadProjectContext(workDir);
-	if (context) {
-		parts.push(`## Project Context\n${context}`);
+	if (loadedConfig) {
+		const contextParts: string[] = [];
+		if (loadedConfig.project.name) contextParts.push(`Project: ${loadedConfig.project.name}`);
+		if (loadedConfig.project.language) contextParts.push(`Language: ${loadedConfig.project.language}`);
+		if (loadedConfig.project.framework) contextParts.push(`Framework: ${loadedConfig.project.framework}`);
+		if (loadedConfig.project.description) contextParts.push(`Description: ${loadedConfig.project.description}`);
+		
+		if (contextParts.length > 0) {
+			parts.push(`## Project Context\n${contextParts.join("\n")}`);
+		}
+	} else {
+		// Fallback to loading from disk (for backward compatibility)
+		const context = loadProjectContext(workDir, configPath);
+		if (context) {
+			parts.push(`## Project Context\n${context}`);
+		}
 	}
 
 	// Add rules if available
-	const rules = loadRules(workDir);
+	const rules = loadedConfig?.rules ?? (config === undefined ? loadRules(workDir, configPath) : []);
 	if (rules.length > 0) {
 		parts.push(`## Rules (you MUST follow these)\n${rules.join("\n")}`);
 	}
 
 	// Add boundaries
-	const boundaries = loadBoundaries(workDir);
+	const boundaries = loadedConfig?.boundaries.never_touch ?? (config === undefined ? loadBoundaries(workDir, configPath) : []);
 	if (boundaries.length > 0) {
 		parts.push(`## Boundaries\nDo NOT modify these files/directories:\n${boundaries.join("\n")}`);
 	}

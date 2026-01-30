@@ -115,6 +115,8 @@ export interface RuntimeOptions {
 	useSandbox?: boolean;
 	/** Additional arguments to pass to the engine CLI */
 	engineArgs?: string[];
+	/** Custom config file path */
+	configPath?: string;
 }
 
 /**

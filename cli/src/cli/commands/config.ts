@@ -6,22 +6,22 @@ import { logError, logSuccess, logWarn } from "../../ui/logger.ts";
 /**
  * Handle --config command (show configuration)
  */
-export async function showConfig(workDir = process.cwd()): Promise<void> {
-	if (!isInitialized(workDir)) {
+export async function showConfig(workDir = process.cwd(), configPath?: string): Promise<void> {
+	if (!isInitialized(workDir, configPath)) {
 		logWarn("No config found. Run 'ralphy --init' first.");
 		return;
 	}
 
-	const config = loadConfig(workDir);
+	const config = loadConfig(workDir, configPath);
 	if (!config) {
 		logError("Failed to load config");
 		return;
 	}
 
-	const configPath = getConfigPath(workDir);
+	const configFilePath = getConfigPath(workDir, configPath);
 
 	console.log("");
-	console.log(`${pc.bold("Ralphy Configuration")} (${configPath})`);
+	console.log(`${pc.bold("Ralphy Configuration")} (${configFilePath})`);
 	console.log("");
 
 	// Project info
@@ -63,8 +63,8 @@ export async function showConfig(workDir = process.cwd()): Promise<void> {
 /**
  * Handle --add-rule command
  */
-export async function addRule(rule: string, workDir = process.cwd()): Promise<void> {
-	if (!isInitialized(workDir)) {
+export async function addRule(rule: string, workDir = process.cwd(), configPath?: string): Promise<void> {
+	if (!isInitialized(workDir, configPath)) {
 		logError("No config found. Run 'ralphy --init' first.");
 		return;
 	}

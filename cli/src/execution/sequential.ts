@@ -40,6 +40,8 @@ export interface ExecutionOptions {
 	engineArgs?: string[];
 	/** GitHub issue number to sync PRD with on each iteration */
 	syncIssue?: number;
+	/** Custom config file path */
+	configPath?: string;
 }
 
 export interface ExecutionResult {
@@ -103,6 +105,13 @@ export async function runSequential(options: ExecutionOptions): Promise<Executio
 		const remaining = await taskSource.countRemaining();
 		logInfo(`Task ${iteration}: ${task.title} (${remaining} remaining)`);
 
+		// Load config once per iteration (allows dynamic updates during execution)
+		const config = await Promise.resolve(
+			options.configPath ? 
+				(await import("../config/loader.ts")).loadConfig(workDir, options.configPath) : 
+				(await import("../config/loader.ts")).loadConfig(workDir)
+		);
+
 		// Create branch if needed
 		let branch: string | null = null;
 		if (branchPerTask && baseBranch) {
@@ -123,6 +132,8 @@ export async function runSequential(options: ExecutionOptions): Promise<Executio
 			skipTests,
 			skipLint,
 			prdFile: options.prdFile,
+			configPath: options.configPath,
+			config,
 		});
 
 		// Execute with spinner

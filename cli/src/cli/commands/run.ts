@@ -26,7 +26,7 @@ import { buildActiveSettings } from "../../ui/settings.ts";
 export async function runLoop(options: RuntimeOptions): Promise<void> {
 	const workDir = process.cwd();
 	const startTime = Date.now();
-	const config = loadConfig(workDir);
+	const config = loadConfig(workDir, options.configPath);
 
 	// Set verbose mode
 	setVerbose(options.verbose);
@@ -135,6 +135,7 @@ export async function runLoop(options: RuntimeOptions): Promise<void> {
 			skipMerge: options.skipMerge,
 			engineArgs: options.engineArgs,
 			syncIssue: options.syncIssue,
+			configPath: options.configPath,
 		});
 	} else {
 		result = await runSequential({
@@ -159,6 +160,7 @@ export async function runLoop(options: RuntimeOptions): Promise<void> {
 			skipMerge: options.skipMerge,
 			engineArgs: options.engineArgs,
 			syncIssue: options.syncIssue,
+			configPath: options.configPath,
 		});
 	}
 

@@ -64,6 +64,24 @@ boundaries:
     - "*.lock"
 ```
 
+### Custom Config Files
+
+Use different config files for different projects or environments:
+
+```bash
+# Use a custom config file
+ralphy --config-path .ralphy/config-prod.yaml "deploy feature"
+ralphy --config-path configs/strict-rules.yaml --prd PRD.md
+
+# View a specific config file
+ralphy --config --config-path .ralphy/config-dev.yaml
+
+# Add rule to a specific config (uses default .ralphy/config.yaml for --add-rule)
+ralphy --add-rule "always add tests" --config-path .ralphy/custom.yaml
+```
+
+The `--config-path` option supports both relative and absolute paths.
+
 ## AI Engines
 
 ```bash

@@ -17,7 +17,7 @@ import { ProgressSpinner } from "../../ui/spinner.ts";
  */
 export async function runTask(task: string, options: RuntimeOptions): Promise<void> {
 	const workDir = process.cwd();
-	const config = loadConfig(workDir);
+	const config = loadConfig(workDir, options.configPath);
 
 	// Set verbose mode
 	setVerbose(options.verbose);
@@ -38,6 +38,9 @@ export async function runTask(task: string, options: RuntimeOptions): Promise<vo
 		logInfo("Browser automation enabled (agent-browser)");
 	}
 
+	// Load config once for the task
+	const taskConfig = loadConfig(workDir, options.configPath);
+
 	// Build prompt
 	const prompt = buildPrompt({
 		task,
@@ -46,6 +49,8 @@ export async function runTask(task: string, options: RuntimeOptions): Promise<vo
 		browserEnabled: options.browserEnabled,
 		skipTests: options.skipTests,
 		skipLint: options.skipLint,
+		configPath: options.configPath,
+		config: taskConfig,
 	});
 
 	// Build active settings for display
