@@ -17,9 +17,7 @@ export function createProgram(): Command {
 		.version(VERSION)
 		.argument("[task]", "Single task to execute (brownfield mode)")
 		.option("--init", "Initialize .ralphy/ configuration")
-		.option("--hello", "Say hello")
 		.option("--config", "Show current configuration")
-		.option("--config-path <path>", "Path to config file (default: .ralphy/config.yaml)")
 		.option("--add-rule <rule>", "Add a rule to config")
 		.option("--no-tests, --skip-tests", "Skip running tests")
 		.option("--no-lint, --skip-lint", "Skip running lint")
@@ -71,7 +69,6 @@ export function parseArgs(args: string[]): {
 	options: RuntimeOptions;
 	task: string | undefined;
 	initMode: boolean;
-	helloMode: boolean;
 	showConfig: boolean;
 	addRule: string | undefined;
 	configPath: string | undefined;
@@ -171,7 +168,6 @@ export function parseArgs(args: string[]): {
 		options,
 		task,
 		initMode: opts.init || false,
-		helloMode: opts.hello || false,
 		showConfig: opts.config || false,
 		addRule: opts.addRule,
 		configPath: opts.configPath,
