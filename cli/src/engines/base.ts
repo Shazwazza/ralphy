@@ -51,8 +51,16 @@ export async function execCommand(
 
 		// Write stdin content if provided
 		if (stdinContent && proc.stdin) {
-			proc.stdin.write(stdinContent);
-			proc.stdin.end();
+			try {
+				proc.stdin.write(stdinContent);
+				proc.stdin.end();
+			} catch (err: any) {
+				// Ignore EPIPE errors - process may have closed stdin before we finished writing
+				// This can happen if the child process exits quickly or doesn't read from stdin
+				if (err.code !== "EPIPE") {
+					throw err;
+				}
+			}
 		}
 
 		const [stdout, stderr, exitCode] = await Promise.all([
@@ -73,14 +81,26 @@ export async function execCommand(
 			shell: isWindows, // Required on Windows for npm global commands (.cmd wrappers)
 		});
 
-		// Write stdin content if provided
-		if (stdinContent && proc.stdin) {
-			proc.stdin.write(stdinContent);
-			proc.stdin.end();
-		}
-
 		let stdout = "";
 		let stderr = "";
+
+		// Write stdin content if provided
+		if (stdinContent && proc.stdin) {
+			// Handle EPIPE errors gracefully - process may close stdin before we finish writing
+			proc.stdin.on("error", (err: any) => {
+				// Ignore EPIPE errors - this is expected if the child process closes stdin early
+				if (err.code !== "EPIPE") {
+					stderr += `\nStdin write error: ${err.message}`;
+				}
+			});
+
+			proc.stdin.write(stdinContent, (err) => {
+				if (err && err.code !== "EPIPE") {
+					stderr += `\nStdin write error: ${err.message}`;
+				}
+			});
+			proc.stdin.end();
+		}
 
 		proc.stdout?.on("data", (data) => {
 			stdout += data.toString();
@@ -217,8 +237,16 @@ export async function execCommandStreaming(
 
 		// Write stdin content if provided
 		if (stdinContent && proc.stdin) {
-			proc.stdin.write(stdinContent);
-			proc.stdin.end();
+			try {
+				proc.stdin.write(stdinContent);
+				proc.stdin.end();
+			} catch (err: any) {
+				// Ignore EPIPE errors - process may have closed stdin before we finished writing
+				// This can happen if the child process exits quickly or doesn't read from stdin
+				if (err.code !== "EPIPE") {
+					throw err;
+				}
+			}
 		}
 
 		// Process both stdout and stderr in parallel
@@ -239,7 +267,19 @@ export async function execCommandStreaming(
 
 		// Write stdin content if provided
 		if (stdinContent && proc.stdin) {
-			proc.stdin.write(stdinContent);
+			// Handle EPIPE errors gracefully - process may close stdin before we finish writing
+			proc.stdin.on("error", (err: any) => {
+				// Ignore EPIPE errors - this is expected if the child process closes stdin early
+				if (err.code !== "EPIPE") {
+					onLine(`Stdin write error: ${err.message}`);
+				}
+			});
+
+			proc.stdin.write(stdinContent, (err) => {
+				if (err && err.code !== "EPIPE") {
+					onLine(`Stdin write error: ${err.message}`);
+				}
+			});
 			proc.stdin.end();
 		}
 
