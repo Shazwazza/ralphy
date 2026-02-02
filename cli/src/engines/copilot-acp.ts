@@ -38,9 +38,12 @@ export class CopilotAcpEngine extends BaseAIEngine {
 		logDebug(`[Copilot ACP] Starting ACP server: ${executable} --acp --stdio`);
 
 		// Start Copilot CLI in ACP stdio mode
+		// On Windows, we need to use shell:true to handle .cmd wrappers
+		const isWindows = process.platform === "win32";
 		const copilotProcess = spawn(executable, ["--acp", "--stdio"], {
 			cwd: workDir,
 			stdio: ["pipe", "pipe", "pipe"], // stdin, stdout, stderr
+			shell: isWindows, // Required on Windows for npm global commands (.cmd wrappers)
 		});
 
 		if (!copilotProcess.stdin || !copilotProcess.stdout) {
