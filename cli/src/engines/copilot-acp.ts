@@ -211,12 +211,12 @@ export class CopilotAcpEngine extends BaseAIEngine {
 			logDebug(`[Copilot ACP] Prompt completed with stopReason: ${promptResult.stopReason}`);
 			logDebug(`[Copilot ACP] Response length: ${response.length} chars`);
 
-			// Extract token counts from usage data if available
-			if (promptResult.usage) {
-				inputTokens = promptResult.usage.inputTokens || 0;
-				outputTokens = promptResult.usage.outputTokens || 0;
-				logDebug(`[Copilot ACP] Tokens: ${inputTokens} in, ${outputTokens} out`);
-			}
+			// Note: Copilot's ACP implementation does not return token counts in promptResult
+			// The promptResult only contains { stopReason: "end_turn" }
+			// Token/usage metadata is not available through ACP protocol with Copilot CLI
+			// This differs from the legacy implementation which could parse token counts from CLI output
+			logDebug("[Copilot ACP] Note: Token counts not available via ACP protocol");
+
 
 			// Check for error stop reasons
 			if (promptResult.stopReason === "error") {
@@ -358,12 +358,10 @@ export class CopilotAcpEngine extends BaseAIEngine {
 			logDebug(`[Copilot ACP] Streaming completed with stopReason: ${promptResult.stopReason}`);
 			logDebug(`[Copilot ACP] Response length: ${response.length} chars`);
 
-			// Extract token counts from usage data if available
-			if (promptResult.usage) {
-				inputTokens = promptResult.usage.inputTokens || 0;
-				outputTokens = promptResult.usage.outputTokens || 0;
-				logDebug(`[Copilot ACP] Tokens: ${inputTokens} in, ${outputTokens} out`);
-			}
+			// Note: Copilot's ACP implementation does not return token counts
+			// Token/usage metadata is not available through ACP protocol with Copilot CLI
+			logDebug("[Copilot ACP] Note: Token counts not available via ACP protocol");
+
 
 			// Check for error stop reasons
 			if (promptResult.stopReason === "error") {

@@ -1,3 +1,3 @@
-# Instructions
+# Test Task
 
-- [ ] Say hello.
+- [x] Say hello
