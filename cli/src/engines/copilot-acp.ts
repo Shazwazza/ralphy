@@ -15,6 +15,12 @@ import type { AIResult, EngineOptions, ProgressCallback } from "./types.ts";
  * - Direct access to token counts from protocol
  * - Better error handling with structured responses
  * - No fragile text parsing or temporary files
+ *
+ * ACP Documentation: https://docs.github.com/en/copilot/reference/acp-server
+ * Protocol Spec: https://agentclientprotocol.com/protocol/overview
+ *
+ * Note: This is now the default implementation for --copilot flag.
+ * The legacy CopilotEngine (using text parsing) is kept for reference.
  */
 export class CopilotAcpEngine extends BaseAIEngine {
 	name = "GitHub Copilot";
