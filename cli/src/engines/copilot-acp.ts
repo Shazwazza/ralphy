@@ -393,8 +393,8 @@ export class CopilotAcpEngine extends BaseAIEngine {
 				return {
 					success: false,
 					response: response || "An error occurred",
-					inputTokens,
-					outputTokens,
+					inputTokens: 0,
+					outputTokens: 0,
 					error: "Copilot CLI returned an error",
 				};
 			}
@@ -403,8 +403,8 @@ export class CopilotAcpEngine extends BaseAIEngine {
 				return {
 					success: false,
 					response: response || "Request was cancelled",
-					inputTokens,
-					outputTokens,
+					inputTokens: 0,
+					outputTokens: 0,
 					error: "Request was cancelled",
 				};
 			}
@@ -412,8 +412,8 @@ export class CopilotAcpEngine extends BaseAIEngine {
 			return {
 				success: true,
 				response: response || "Task completed",
-				inputTokens,
-				outputTokens,
+				inputTokens: 0, // Not available via ACP
+				outputTokens: 0, // Not available via ACP
 				cost: durationMs > 0 ? `duration:${durationMs}` : undefined,
 			};
 		} catch (err) {
