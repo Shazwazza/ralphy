@@ -27,69 +27,6 @@ export class CopilotAcpEngine extends BaseAIEngine {
 	cliCommand = "copilot";
 
 	/**
-	 * Start Copilot CLI in ACP server mode and create a connection
-	 */
-	private async createAcpConnection(workDir: string): Promise<{
-		connection: acp.ClientSideConnection;
-		process: ReturnType<typeof spawn>;
-	}> {
-		const executable = process.env.COPILOT_CLI_PATH || this.cliCommand;
-
-		logDebug(`[Copilot ACP] Starting ACP server: ${executable} --acp --stdio`);
-
-		// Start Copilot CLI in ACP stdio mode
-		// On Windows, we need to use shell:true to handle .cmd wrappers
-		const isWindows = process.platform === "win32";
-		const copilotProcess = spawn(executable, ["--acp", "--stdio"], {
-			cwd: workDir,
-			stdio: ["pipe", "pipe", "pipe"], // stdin, stdout, stderr
-			shell: isWindows, // Required on Windows for npm global commands (.cmd wrappers)
-		});
-
-		if (!copilotProcess.stdin || !copilotProcess.stdout) {
-			throw new Error("Failed to start Copilot ACP process with piped stdio.");
-		}
-
-		// Log stderr for debugging
-		if (copilotProcess.stderr) {
-			copilotProcess.stderr.on("data", (data) => {
-				logDebug(`[Copilot ACP stderr] ${data.toString()}`);
-			});
-		}
-
-		// Create ACP streams (NDJSON over stdio)
-		const output = Writable.toWeb(copilotProcess.stdin) as WritableStream<Uint8Array>;
-		const input = Readable.toWeb(copilotProcess.stdout) as ReadableStream<Uint8Array>;
-		const stream = acp.ndJsonStream(output, input);
-
-		// Create client implementation
-		const client: acp.Client = {
-			async requestPermission(_params) {
-				// In yolo mode, auto-approve all tool/permission requests
-				logDebug("[Copilot ACP] Auto-approving permission request (yolo mode)");
-				return { outcome: { outcome: "approved" } };
-			},
-
-			async sessionUpdate(_params) {
-				// Session updates are handled per-request in execute/executeStreaming
-			},
-		};
-
-		const connection = new acp.ClientSideConnection((_agent) => client, stream);
-
-		// Initialize the ACP connection
-		logDebug("[Copilot ACP] Initializing connection");
-		await connection.initialize({
-			protocolVersion: acp.PROTOCOL_VERSION,
-			clientCapabilities: {},
-		});
-
-		logDebug("[Copilot ACP] Connection initialized");
-
-		return { connection, process: copilotProcess };
-	}
-
-	/**
 	 * Cleanup ACP connection and process
 	 */
 	private async cleanupAcpConnection(
@@ -111,19 +48,33 @@ export class CopilotAcpEngine extends BaseAIEngine {
 				process.stdin.end();
 			}
 
-			// Kill the process
-			process.kill("SIGTERM");
+			// Use cross-platform process termination
+			// On Windows, SIGTERM doesn't work reliably, so we use default kill behavior
+			const isWindows = process.platform === "win32";
+			if (isWindows) {
+				process.kill(); // Uses SIGTERM equivalent on Windows
+			} else {
+				process.kill("SIGTERM");
+			}
 
-			// Wait for process to exit (with timeout)
+			// Wait for process to exit with timeout and force kill if needed
+			const exitTimeout = 2000;
 			await new Promise<void>((resolve) => {
+				const timeoutId = setTimeout(() => {
+					logDebug("[Copilot ACP] Process cleanup timeout, forcing kill");
+					try {
+						process.kill("SIGKILL"); // Force kill on timeout
+					} catch (err) {
+						logDebug(`[Copilot ACP] Force kill failed: ${err instanceof Error ? err.message : String(err)}`);
+					}
+					resolve();
+				}, exitTimeout);
+
 				process.once("exit", () => {
+					clearTimeout(timeoutId);
 					logDebug("[Copilot ACP] Process exited");
 					resolve();
 				});
-				setTimeout(() => {
-					logDebug("[Copilot ACP] Process cleanup timeout");
-					resolve();
-				}, 2000);
 			});
 		} catch (err) {
 			logDebug(`[Copilot ACP] Cleanup error: ${err instanceof Error ? err.message : String(err)}`);
@@ -136,7 +87,9 @@ export class CopilotAcpEngine extends BaseAIEngine {
 	private buildPromptContent(prompt: string, options?: EngineOptions): acp.PromptContent[] {
 		const content: acp.PromptContent[] = [{ type: "text", text: prompt }];
 
-		// Add model override as instruction if provided
+		// Note: Model override is passed as text instruction because Copilot's ACP
+		// implementation doesn't currently support native model parameter.
+		// This is a limitation of Copilot CLI's ACP preview implementation.
 		if (options?.modelOverride) {
 			content.unshift({
 				type: "text",
@@ -147,6 +100,35 @@ export class CopilotAcpEngine extends BaseAIEngine {
 		return content;
 	}
 
+	/**
+	 * Create a client with custom sessionUpdate handler for capturing response chunks
+	 * 
+	 * Note: This uses a workaround to intercept sessionUpdate calls since the ACP SDK
+	 * doesn't provide a built-in way to access the full response. This approach wraps
+	 * the client to intercept and accumulate chunks before passing them to the original handler.
+	 */
+	private createChunkCapturingClient(
+		originalClient: acp.Client,
+		onChunk: (text: string) => void,
+	): acp.Client {
+		return {
+			...originalClient,
+			async sessionUpdate(params: acp.SessionUpdateParams) {
+				const update = params.update;
+
+				// Capture text chunks
+				if (update.sessionUpdate === "agent_message_chunk" && update.content.type === "text") {
+					onChunk(update.content.text);
+				}
+
+				// Call original handler if it exists
+				if (originalClient.sessionUpdate) {
+					await originalClient.sessionUpdate(params);
+				}
+			},
+		};
+	}
+
 	async execute(prompt: string, workDir: string, options?: EngineOptions): Promise<AIResult> {
 		let connection: acp.ClientSideConnection | undefined;
 		let copilotProcess: ReturnType<typeof spawn> | undefined;
@@ -155,12 +137,62 @@ export class CopilotAcpEngine extends BaseAIEngine {
 		try {
 			const startTime = Date.now();
 
-			// Create ACP connection
-			const acpConnection = await this.createAcpConnection(workDir);
-			connection = acpConnection.connection;
-			copilotProcess = acpConnection.process;
+			// Spawn Copilot process
+			const executable = process.env.COPILOT_CLI_PATH || this.cliCommand;
+			logDebug(`[Copilot ACP] Starting ACP server: ${executable} --acp --stdio`);
 
-			// Create new session
+			const isWindows = process.platform === "win32";
+			copilotProcess = spawn(executable, ["--acp", "--stdio"], {
+				cwd: workDir,
+				stdio: ["pipe", "pipe", "pipe"],
+				shell: isWindows,
+			});
+
+			if (!copilotProcess.stdin || !copilotProcess.stdout) {
+				throw new Error("Failed to start Copilot ACP process with piped stdio.");
+			}
+
+			if (copilotProcess.stderr) {
+				copilotProcess.stderr.on("data", (data) => {
+					logDebug(`[Copilot ACP stderr] ${data.toString()}`);
+				});
+			}
+
+			// Create ACP streams
+			const output = Writable.toWeb(copilotProcess.stdin) as WritableStream<Uint8Array>;
+			const input = Readable.toWeb(copilotProcess.stdout) as ReadableStream<Uint8Array>;
+			const stream = acp.ndJsonStream(output, input);
+
+			// Accumulate response chunks
+			let response = "";
+
+			// Create client with chunk capturing
+			const client = this.createChunkCapturingClient(
+				{
+					async requestPermission(_params) {
+						logDebug("[Copilot ACP] Auto-approving permission request (yolo mode)");
+						return { outcome: { outcome: "approved" } };
+					},
+					async sessionUpdate(_params) {
+						// Handled by wrapper
+					},
+				},
+				(text) => {
+					response += text;
+				},
+			);
+
+			// Create connection
+			connection = new acp.ClientSideConnection((_agent) => client, stream);
+
+			// Initialize
+			logDebug("[Copilot ACP] Initializing connection");
+			await connection.initialize({
+				protocolVersion: acp.PROTOCOL_VERSION,
+				clientCapabilities: {},
+			});
+
+			// Create session
 			logDebug(`[Copilot ACP] Creating new session in: ${workDir}`);
 			const sessionResult = await connection.newSession({
 				cwd: workDir,
@@ -169,38 +201,10 @@ export class CopilotAcpEngine extends BaseAIEngine {
 			sessionId = sessionResult.sessionId;
 			logDebug(`[Copilot ACP] Session created: ${sessionId}`);
 
-			// Build prompt content
+			// Build and send prompt
 			const promptContent = this.buildPromptContent(prompt, options);
 			logDebug(`[Copilot ACP] Sending prompt (${prompt.length} chars)`);
 
-			// Accumulate response chunks
-			let response = "";
-			let inputTokens = 0;
-			let outputTokens = 0;
-
-			// Override sessionUpdate to capture chunks for this specific request
-			const originalClient = (connection as any).clientProvider;
-			(connection as any).clientProvider = (agent: any) => {
-				const client = originalClient(agent);
-				return {
-					...client,
-					async sessionUpdate(params: acp.SessionUpdateParams) {
-						const update = params.update;
-
-						// Capture text chunks
-						if (update.sessionUpdate === "agent_message_chunk" && update.content.type === "text") {
-							response += update.content.text;
-						}
-
-						// Call original handler
-						if (client.sessionUpdate) {
-							await client.sessionUpdate(params);
-						}
-					},
-				};
-			};
-
-			// Send prompt
 			const promptResult = await connection.prompt({
 				sessionId,
 				prompt: promptContent,
@@ -217,14 +221,13 @@ export class CopilotAcpEngine extends BaseAIEngine {
 			// This differs from the legacy implementation which could parse token counts from CLI output
 			logDebug("[Copilot ACP] Note: Token counts not available via ACP protocol");
 
-
 			// Check for error stop reasons
 			if (promptResult.stopReason === "error") {
 				return {
 					success: false,
 					response: response || "An error occurred",
-					inputTokens,
-					outputTokens,
+					inputTokens: 0,
+					outputTokens: 0,
 					error: "Copilot CLI returned an error",
 				};
 			}
@@ -233,8 +236,8 @@ export class CopilotAcpEngine extends BaseAIEngine {
 				return {
 					success: false,
 					response: response || "Request was cancelled",
-					inputTokens,
-					outputTokens,
+					inputTokens: 0,
+					outputTokens: 0,
 					error: "Request was cancelled",
 				};
 			}
@@ -242,8 +245,8 @@ export class CopilotAcpEngine extends BaseAIEngine {
 			return {
 				success: true,
 				response: response || "Task completed",
-				inputTokens,
-				outputTokens,
+				inputTokens: 0, // Not available via ACP
+				outputTokens: 0, // Not available via ACP
 				cost: durationMs > 0 ? `duration:${durationMs}` : undefined,
 			};
 		} catch (err) {
@@ -293,12 +296,71 @@ export class CopilotAcpEngine extends BaseAIEngine {
 		try {
 			const startTime = Date.now();
 
-			// Create ACP connection
-			const acpConnection = await this.createAcpConnection(workDir);
-			connection = acpConnection.connection;
-			copilotProcess = acpConnection.process;
+			// Spawn Copilot process
+			const executable = process.env.COPILOT_CLI_PATH || this.cliCommand;
+			logDebug(`[Copilot ACP] Starting ACP server: ${executable} --acp --stdio`);
 
-			// Create new session
+			const isWindows = process.platform === "win32";
+			copilotProcess = spawn(executable, ["--acp", "--stdio"], {
+				cwd: workDir,
+				stdio: ["pipe", "pipe", "pipe"],
+				shell: isWindows,
+			});
+
+			if (!copilotProcess.stdin || !copilotProcess.stdout) {
+				throw new Error("Failed to start Copilot ACP process with piped stdio.");
+			}
+
+			if (copilotProcess.stderr) {
+				copilotProcess.stderr.on("data", (data) => {
+					logDebug(`[Copilot ACP stderr] ${data.toString()}`);
+				});
+			}
+
+			// Create ACP streams
+			const output = Writable.toWeb(copilotProcess.stdin) as WritableStream<Uint8Array>;
+			const input = Readable.toWeb(copilotProcess.stdout) as ReadableStream<Uint8Array>;
+			const stream = acp.ndJsonStream(output, input);
+
+			// Accumulate response chunks and call progress
+			let response = "";
+			let lastProgressUpdate = "";
+
+			// Create client with chunk capturing and progress reporting
+			const client = this.createChunkCapturingClient(
+				{
+					async requestPermission(_params) {
+						logDebug("[Copilot ACP] Auto-approving permission request (yolo mode)");
+						return { outcome: { outcome: "approved" } };
+					},
+					async sessionUpdate(_params) {
+						// Handled by wrapper
+					},
+				},
+				(text) => {
+					response += text;
+
+					// Update progress with a preview of the response
+					// Show last 50 chars to give user feedback
+					const preview = response.slice(-50).replace(/\n/g, " ").trim();
+					if (preview && preview !== lastProgressUpdate) {
+						lastProgressUpdate = preview;
+						onProgress(`Streaming: ${preview}...`);
+					}
+				},
+			);
+
+			// Create connection
+			connection = new acp.ClientSideConnection((_agent) => client, stream);
+
+			// Initialize
+			logDebug("[Copilot ACP] Initializing connection");
+			await connection.initialize({
+				protocolVersion: acp.PROTOCOL_VERSION,
+				clientCapabilities: {},
+			});
+
+			// Create session
 			logDebug(`[Copilot ACP] Creating new session in: ${workDir}`);
 			const sessionResult = await connection.newSession({
 				cwd: workDir,
@@ -307,47 +369,10 @@ export class CopilotAcpEngine extends BaseAIEngine {
 			sessionId = sessionResult.sessionId;
 			logDebug(`[Copilot ACP] Session created: ${sessionId}`);
 
-			// Build prompt content
+			// Build and send prompt
 			const promptContent = this.buildPromptContent(prompt, options);
 			logDebug(`[Copilot ACP] Sending prompt (${prompt.length} chars) with streaming`);
 
-			// Accumulate response chunks
-			let response = "";
-			let inputTokens = 0;
-			let outputTokens = 0;
-			let lastProgressUpdate = "";
-
-			// Override sessionUpdate to capture chunks and call progress callback
-			const originalClient = (connection as any).clientProvider;
-			(connection as any).clientProvider = (agent: any) => {
-				const client = originalClient(agent);
-				return {
-					...client,
-					async sessionUpdate(params: acp.SessionUpdateParams) {
-						const update = params.update;
-
-						// Capture and stream text chunks
-						if (update.sessionUpdate === "agent_message_chunk" && update.content.type === "text") {
-							response += update.content.text;
-
-							// Update progress with a preview of the response
-							// Show last 50 chars to give user feedback
-							const preview = response.slice(-50).replace(/\n/g, " ").trim();
-							if (preview && preview !== lastProgressUpdate) {
-								lastProgressUpdate = preview;
-								onProgress(`Streaming: ${preview}...`);
-							}
-						}
-
-						// Call original handler
-						if (client.sessionUpdate) {
-							await client.sessionUpdate(params);
-						}
-					},
-				};
-			};
-
-			// Send prompt
 			const promptResult = await connection.prompt({
 				sessionId,
 				prompt: promptContent,
