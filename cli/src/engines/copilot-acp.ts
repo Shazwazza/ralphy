@@ -12,9 +12,11 @@ import type { AIResult, EngineOptions, ProgressCallback } from "./types.ts";
  * with Copilot CLI instead of parsing text output. Benefits:
  * - Structured NDJSON protocol communication
  * - Real streaming via agent_message_chunk events
- * - Direct access to token counts from protocol
  * - Better error handling with structured responses
  * - No fragile text parsing or temporary files
+ *
+ * Note: Token counts are not available via Copilot's ACP implementation (public preview).
+ * All token counts are set to 0.
  *
  * ACP Documentation: https://docs.github.com/en/copilot/reference/acp-server
  * Protocol Spec: https://agentclientprotocol.com/protocol/overview
@@ -60,17 +62,27 @@ export class CopilotAcpEngine extends BaseAIEngine {
 			// Wait for process to exit with timeout and force kill if needed
 			const exitTimeout = 2000;
 			await new Promise<void>((resolve) => {
+				let processExited = false;
 				const timeoutId = setTimeout(() => {
-					logDebug("[Copilot ACP] Process cleanup timeout, forcing kill");
-					try {
-						process.kill("SIGKILL"); // Force kill on timeout
-					} catch (err) {
-						logDebug(`[Copilot ACP] Force kill failed: ${err instanceof Error ? err.message : String(err)}`);
+					if (!processExited) {
+						logDebug("[Copilot ACP] Process cleanup timeout, forcing kill");
+						try {
+							process.kill("SIGKILL"); // Force kill on timeout
+						} catch (err) {
+							logDebug(`[Copilot ACP] Force kill failed: ${err instanceof Error ? err.message : String(err)}`);
+						}
+						// Give SIGKILL a moment to work before resolving
+						setTimeout(() => {
+							if (!processExited) {
+								logDebug("[Copilot ACP] Warning: Process may still be running after SIGKILL");
+							}
+							resolve();
+						}, 500);
 					}
-					resolve();
 				}, exitTimeout);
 
 				process.once("exit", () => {
+					processExited = true;
 					clearTimeout(timeoutId);
 					logDebug("[Copilot ACP] Process exited");
 					resolve();
@@ -152,9 +164,13 @@ export class CopilotAcpEngine extends BaseAIEngine {
 				throw new Error("Failed to start Copilot ACP process with piped stdio.");
 			}
 
+			// Capture stderr for diagnostics
+			const stderrChunks: Buffer[] = [];
 			if (copilotProcess.stderr) {
 				copilotProcess.stderr.on("data", (data) => {
-					logDebug(`[Copilot ACP stderr] ${data.toString()}`);
+					const chunk = Buffer.from(data);
+					stderrChunks.push(chunk);
+					logDebug(`[Copilot ACP stderr] ${chunk.toString()}`);
 				});
 			}
 
@@ -251,7 +267,10 @@ export class CopilotAcpEngine extends BaseAIEngine {
 			};
 		} catch (err) {
 			const errorMessage = err instanceof Error ? err.message : String(err);
-			logDebug(`[Copilot ACP] Error: ${errorMessage}`);
+			const stderrOutput = stderrChunks.length > 0 
+				? `\nStderr: ${Buffer.concat(stderrChunks).toString().trim()}`
+				: "";
+			logDebug(`[Copilot ACP] Error: ${errorMessage}${stderrOutput}`);
 
 			// Check for authentication errors
 			if (
@@ -273,7 +292,7 @@ export class CopilotAcpEngine extends BaseAIEngine {
 				response: "",
 				inputTokens: 0,
 				outputTokens: 0,
-				error: `Failed to execute prompt: ${errorMessage}`,
+				error: `Failed to execute prompt: ${errorMessage}${stderrOutput}`,
 			};
 		} finally {
 			// Always cleanup
@@ -311,9 +330,13 @@ export class CopilotAcpEngine extends BaseAIEngine {
 				throw new Error("Failed to start Copilot ACP process with piped stdio.");
 			}
 
+			// Capture stderr for diagnostics
+			const stderrChunks: Buffer[] = [];
 			if (copilotProcess.stderr) {
 				copilotProcess.stderr.on("data", (data) => {
-					logDebug(`[Copilot ACP stderr] ${data.toString()}`);
+					const chunk = Buffer.from(data);
+					stderrChunks.push(chunk);
+					logDebug(`[Copilot ACP stderr] ${chunk.toString()}`);
 				});
 			}
 
@@ -418,7 +441,10 @@ export class CopilotAcpEngine extends BaseAIEngine {
 			};
 		} catch (err) {
 			const errorMessage = err instanceof Error ? err.message : String(err);
-			logDebug(`[Copilot ACP] Streaming error: ${errorMessage}`);
+			const stderrOutput = stderrChunks.length > 0 
+				? `\nStderr: ${Buffer.concat(stderrChunks).toString().trim()}`
+				: "";
+			logDebug(`[Copilot ACP] Streaming error: ${errorMessage}${stderrOutput}`);
 
 			// Check for authentication errors
 			if (
@@ -440,7 +466,7 @@ export class CopilotAcpEngine extends BaseAIEngine {
 				response: "",
 				inputTokens: 0,
 				outputTokens: 0,
-				error: `Failed to execute streaming prompt: ${errorMessage}`,
+				error: `Failed to execute streaming prompt: ${errorMessage}${stderrOutput}`,
 			};
 		} finally {
 			// Always cleanup
