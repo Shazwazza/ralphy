@@ -145,6 +145,7 @@ export class CopilotAcpEngine extends BaseAIEngine {
 		let connection: acp.ClientSideConnection | undefined;
 		let copilotProcess: ReturnType<typeof spawn> | undefined;
 		let sessionId: string | undefined;
+		const stderrChunks: Buffer[] = [];
 
 		try {
 			const startTime = Date.now();
@@ -165,7 +166,6 @@ export class CopilotAcpEngine extends BaseAIEngine {
 			}
 
 			// Capture stderr for diagnostics
-			const stderrChunks: Buffer[] = [];
 			if (copilotProcess.stderr) {
 				copilotProcess.stderr.on("data", (data) => {
 					const chunk = Buffer.from(data);
@@ -311,6 +311,7 @@ export class CopilotAcpEngine extends BaseAIEngine {
 		let connection: acp.ClientSideConnection | undefined;
 		let copilotProcess: ReturnType<typeof spawn> | undefined;
 		let sessionId: string | undefined;
+		const stderrChunks: Buffer[] = [];
 
 		try {
 			const startTime = Date.now();
@@ -331,7 +332,6 @@ export class CopilotAcpEngine extends BaseAIEngine {
 			}
 
 			// Capture stderr for diagnostics
-			const stderrChunks: Buffer[] = [];
 			if (copilotProcess.stderr) {
 				copilotProcess.stderr.on("data", (data) => {
 					const chunk = Buffer.from(data);
@@ -409,7 +409,6 @@ export class CopilotAcpEngine extends BaseAIEngine {
 			// Note: Copilot's ACP implementation does not return token counts
 			// Token/usage metadata is not available through ACP protocol with Copilot CLI
 			logDebug("[Copilot ACP] Note: Token counts not available via ACP protocol");
-
 
 			// Check for error stop reasons
 			if (promptResult.stopReason === "error") {
